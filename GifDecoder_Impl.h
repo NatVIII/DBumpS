@@ -166,7 +166,6 @@ int GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::readWord() {
 // Read the specified number of bytes into the specified buffer
 template <int maxGifWidth, int maxGifHeight, int lzwMaxBits>
 int GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::readIntoBuffer(void *buffer, int numberOfBytes) {
-
     int result = fileReadBlockCallback(buffer, numberOfBytes);
     if (result == -1) {
         Serial.println("Read error or EOF occurred");
@@ -283,6 +282,9 @@ void GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::parseGlobalColorTable() 
 #endif
         // Read color values into the palette array
         int colorTableBytes = sizeof(rgb_24) * colorCount;
+        //File changed from this point on a little bit
+        Serial.print("original palette: ");
+        Serial.print(palette[0].red,HEX);
         readIntoBuffer(palette, colorTableBytes);
     }
 }
@@ -296,10 +298,8 @@ void GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::parsePlainTextExtension(
 #endif
     // Read plain text header length
     uint8_t len = readByte();
-
     // Consume plain text header data
     readIntoBuffer(tempBuffer, len);
-
     // Consume the plain text data in blocks
     len = readByte();
     while (len != 0) {
@@ -896,4 +896,3 @@ void GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::decompressAndDisplayFram
     if (updateScreenCallback)
         (*updateScreenCallback)();
 }
-

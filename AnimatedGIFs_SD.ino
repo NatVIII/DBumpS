@@ -1,4 +1,40 @@
-// please read credits at the bottom of file
+  /**************************************
+  Uses the following excellent libraries
+      https://github.com/nhatuan84/esp32-sh1106-oled
+      https://github.com/2dom/PxMatrix
+
+  Uses the following pieces of hardware
+    *ESP32
+    *64x32 LED Matrix
+    *128x64 OLED Arduino Sheild
+
+  Thanks to these videos and creators for their massive help
+    *https://www.youtube.com/watch?v=w3VIxtLPuRE (SD Card SPI)
+
+  Dedicated to the brave Mujahadeen Fighters of Afghanistan
+  **************************************/
+#define matrix_width 64
+#define matrix_height 32
+
+/*~~~~Used For The OLED~~~~~~~~~~~~~~*/
+#include <Adafruit_SH1106.h>
+
+#include <Adafruit_GFX.h>
+#include <Adafruit_SPITFT_Macros.h>
+#include <gfxfont.h>
+#include <Adafruit_SPITFT.h>
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+/*~~~~Used For The Matrix~~~~~~~~~~~~*/
+#include <Ticker.h> //Standard Libraries - Already Installed if you have ESP8266 set up
+#include <PxMatrix.h>
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+/*~~~~Used For The SD Card~~~~~~~~~~~*/
+#include "FS.h"
+#include "SD.h"
+#include "SPI.h"
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 //#include <SD.h>
 #ifndef min
@@ -28,54 +64,84 @@ GifDecoder<GIFWIDTH, 320, 12> decoder;
 //#define GIF_DIRECTORY "/gifsdbg"
 #define DISKCOLOUR   BLUE
 #endif
+#define LOOPFORSD
 
-#if defined(ESP32)
-#define SD_CS 17
-#include <SPI.h>
-#include <TFT_eSPI.h>
-TFT_eSPI tft;
-#define TFTBEGIN() tft.begin()
-#define PUSHCOLOR(x) tft.pushColor(x)
-#elif defined(ESP8266)
-#define SD_CS D4
-#include <SPI.h>
-#include <TFT_eSPI.h>
-#include <FS.h>
-TFT_eSPI tft;
-#define TFTBEGIN() tft.begin()
-#define PUSHCOLOR(x) tft.pushColor(x)
-#elif defined(_TEENSYDUINO) || defined(_ARDUINO_NUCLEO_L476RG)
-#define SD_CS 4
-#include <SPI.h>
-#include <ILI9341_kbv.h>
-ILI9341_kbv tft;
-#define TFTBEGIN() tft.begin()
-#define PUSHCOLOR(x) tft.pushColors(&x, 1, first)
-#define PUSHCOLORS(buf, n) tft.pushColors(buf, n, first)
-#elif defined(_TEENSYDUINO)
-#define SD_CS 4
-#include <SPI.h>
-#include <Adafruit_ST7735.h>
-Adafruit_ST7735 tft(10, 9, 8);
-#define color565 Color565
-#define TFTBEGIN() tft.initR(INITR_BLACKTAB)
-#define PUSHCOLOR(x) tft.pushColor(x)
-#elif defined(ARDUINO_SAM_DUE)
-#define SD_CS 4
-#include <SPI.h>
-#include <ILI9341_due.h>
-ILI9341_due tft(10, 9, 8);
-#define TFTBEGIN() tft.begin()
-#define PUSHCOLOR(x) tft.pushColor(x)
-#else
-// Chip select for SD card on the SmartMatrix Shield or Photon
-#define SD_CS SS
-#include <MCUFRIEND_kbv.h>
-MCUFRIEND_kbv tft;
-#define TFTBEGIN() tft.begin(tft.readID())
-#define PUSHCOLOR(x) tft.pushColors(&(x), 1, first)
-#define PUSHCOLORS(buf, n) tft.pushColors(buf, n, first)
-#endif
+  /********************************************\ 
+  |                                            |
+  | //(PO is Pin Out of the Matrix)            |
+  | //(IO is GPIO of the ESP32)                |
+  | +---------+   Panel - Matrix Pins          |
+  | |  R1 G1  |    R1   - IO13      G1   - POR2|
+  | |  B1 GND |    B1   - POG2                 |
+  | |  R2 G2  |    R2   - POR1      G2   - POG1|
+  | |  B2 E   |    B2   - POB1      E    - GND |
+  | |   A B   |    A    - IO26      B    - IO25|
+  | |   C D   |    C    - IO33      D    - IO32|
+  | | CLK LAT |    CLK  - IO14      LAT  - IO12|
+  | | OEB GND |    OEB  - IO27                 |
+  | +---------+                                |
+  |                                            |
+  \*******************************************/
+  
+//Defines Matrix Pins
+#define P_LAT 12 //22 default
+#define P_A 26//19 default
+#define P_B 25 //23 default
+#define P_C 33//18 default
+#define P_D 32//5 default
+#define P_OE 27 //2 default
+hw_timer_t * timer = NULL;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
+
+PxMATRIX MATRIX(matrix_width,matrix_height,P_LAT, P_OE,P_A,P_B,P_C,P_D);//Initializes the Matrix Code and Pins
+
+  /***********************\
+  |+-----------------+    |
+  || VCC GND SCL SDA |    |
+  |+-----------------+    |
+  |Panel - OLED Pins      |
+  |  VCC - 3.3V GND - GND |
+  |  SCL - IO22 SDA - IO21|
+  \***********************/
+
+#define OLED_SDA 21
+#define OLED_SCL 22
+
+Adafruit_SH1106 OLED(OLED_SDA, OLED_SCL);//Initializes the OLED Display Code and Pins
+
+  /***************************\
+  |+-------------------------+|
+  || GND VCC MISO MOSI SCK CS||
+  |+-------------------------+|
+  |Panel  -  SD Card          |
+  |  GND  - GND   VCC - 5V    |
+  |  MISO - G19   SCK - G18   |
+  |  MOSI - G23   CS  - G5    |
+  \***************************/
+
+//SPIClass spiSD(VSPI);
+#define SD_CS 5
+#define SDSPEED 40000000
+
+  /******************\
+  |+----------------+|
+  || BL+ BL- WH+ WH-||
+  |+----------------+|
+  |  Rotary Dial     |
+  |  BL+ - G16       |
+  |  BL- - GND       |
+  |  WH+ - G04       |
+  |  WH- - GND       |
+  \*****************/
+#define R_Blue 16
+#define R_White 4
+boolean PrevR_Blue = false;
+boolean PrevR_White = false;
+volatile int count = 0;
+volatile int finalcount = 0;
+
+//MUST BE 10-50 FOR SOME REASON FOR THE MATRIX
+uint8_t display_draw_time=10;
 
 // Assign human-readable names to some common 16-bit color values:
 #define BLACK   0x0000
@@ -92,6 +158,30 @@ int num_files;
 #include "gifs_128.h"
 #include "wrong_gif.h"
 #include "llama_gif.h"
+
+// ISR for matrix display refresh
+void IRAM_ATTR display_updater(){
+  // Increment the counter and set the time of ISR
+  portENTER_CRITICAL_ISR(&timerMux);
+  MATRIX.display(display_draw_time);
+  portEXIT_CRITICAL_ISR(&timerMux);
+}
+
+void display_update_enable(bool is_enable)
+{
+  if (is_enable)
+  {
+    timer = timerBegin(0, 80, true);
+    timerAttachInterrupt(timer, &display_updater, true);
+    timerAlarmWrite(timer, 2000, true);
+    timerAlarmEnable(timer);
+  }
+  else
+  {
+    timerDetachInterrupt(timer);
+    timerAlarmDisable(timer);
+  }
+}
 
 #define M0(x) {x, #x, sizeof(x)}
 typedef struct {
@@ -158,14 +248,14 @@ void updateScreenCallback(void) {
 }
 
 void drawPixelCallback(int16_t x, int16_t y, uint8_t red, uint8_t green, uint8_t blue) {
-    tft.drawPixel(x, y, tft.color565(red, green, blue));
+    MATRIX.drawPixel(x, y, MATRIX.color565(red, green, blue));
 }
 
 void drawLineCallback(int16_t x, int16_t y, uint8_t *buf, int16_t w, uint16_t *palette, int16_t skip) {
     uint8_t pixel;
     bool first;
-    if (y >= tft.height() || x >= tft.width() ) return;
-    if (x + w > tft.width()) w = tft.width() - x;
+    if (y >= matrix_height || x >= matrix_width ) return;
+    if (x + w > matrix_width) w = matrix_width - x;
     if (w <= 0) return;
     int16_t endx = x + w - 1;
     uint16_t buf565[w];
@@ -177,19 +267,25 @@ void drawLineCallback(int16_t x, int16_t y, uint8_t *buf, int16_t w, uint16_t *p
             buf565[n++] = palette[pixel];
         }
         if (n) {
-            tft.setAddrWindow(x + i - n, y, endx, y);
+            /*MATRIX.setAddrWindow(x + i - n, y, endx, y);
             first = true;
-#ifdef PUSHCOLORS
-            PUSHCOLORS(buf565, n);
-#else
-            for (int j = 0; j < n; j++) PUSHCOLOR(buf565[j]);
-#endif
+            for (int j = 0; j < n; j++) (buf565[j]);*/ // Original Code to replicate
+            for(int j=0;j<n;j++) MATRIX.drawPixel(x+j,y,buf565[j]);
         }
     }
 }
 
 // Setup method runs once, when the sketch starts
 void setup() {
+    Serial.begin(9600);//Connect Serial for Debugging
+    OLED.begin(SH1106_SWITCHCAPVCC, 0x3C);//Initializes the OLED Display
+    OLED.clearDisplay();//Wipes the OLED Display
+    MATRIX.begin(16);//Initializes the MATRIX Display
+    MATRIX.setBrightness(255);
+    MATRIX.setFastUpdate(true);
+    display_update_enable(true);
+    display_update_enable(false);
+    
     decoder.setScreenClearCallback(screenClearCallback);
     decoder.setUpdateScreenCallback(updateScreenCallback);
     decoder.setDrawPixelCallback(drawPixelCallback);
@@ -200,8 +296,13 @@ void setup() {
     decoder.setFileReadCallback(fileReadCallback);
     decoder.setFileReadBlockCallback(fileReadBlockCallback);
 
-    Serial.begin(115200);
     Serial.println("AnimatedGIFs_SD");
+    #ifdef LOOPFORSD
+    while (initSdCard(SD_CS) < 0) {
+        Serial.println("No SD card");
+    }
+    num_files = enumerateGIFFiles(GIF_DIRECTORY, true);
+    #else
     if (initSdCard(SD_CS) < 0) {
         Serial.println("No SD card");
         decoder.setFileSeekCallback(fileSeekCallback_P);
@@ -212,12 +313,14 @@ void setup() {
         for (num_files = 0; num_files < sizeof(gifs) / sizeof(*gifs); num_files++) {
             Serial.println(gifs[num_files].name);
         }
-        //        while (1);
+                while (1);
     }
     else {
         num_files = enumerateGIFFiles(GIF_DIRECTORY, true);
     }
+    #endif
 
+    //display_update_enable(true);
     // Determine how many animated GIF files exist
     Serial.print("Animated GIF files Found: ");
     Serial.println(num_files);
@@ -231,14 +334,6 @@ void setup() {
         Serial.println("Empty gifs directory");
         while (1);
     }
-
-    TFTBEGIN();
-#ifdef _ILI9341_dueH_
-    tft.setRotation((iliRotation)1);
-#else
-    tft.setRotation(1);
-#endif
-    tft.fillScreen(BLACK);
 }
 
 
@@ -249,6 +344,7 @@ void loop() {
     static int index = -1;
 
     if (futureTime < millis() || decoder.getCycleNo() > 1) {
+        display_update_enable(false);
         char buf[80];
         int32_t now = millis();
         int32_t frames = decoder.getFrameCount();
@@ -266,17 +362,23 @@ void loop() {
 
         int good;
         if (g_gif) good = (openGifFilenameByIndex_P(GIF_DIRECTORY, index) >= 0);
-        else good = (openGifFilenameByIndex(GIF_DIRECTORY, index) >= 0);
+        else
+        {
+          //display_update_enable(false);
+          good = (openGifFilenameByIndex(GIF_DIRECTORY, index) >= 0);
+          //display_update_enable(true);
+        }
         if (good >= 0) {
-            tft.fillScreen(g_gif ? MAGENTA : DISKCOLOUR);
-            tft.fillRect(GIFWIDTH, 0, 1, tft.height(), WHITE);
-            tft.fillRect(278, 0, 1, tft.height(), WHITE);
+            MATRIX.fillScreen(g_gif ? MAGENTA : DISKCOLOUR);
+            MATRIX.fillRect(GIFWIDTH, 0, 1, matrix_height, WHITE);
+            MATRIX.fillRect(278, 0, 1, matrix_height, WHITE);
 
             decoder.startDecoding();
 
             // Calculate time in the future to terminate animation
             futureTime = millis() + (DISPLAY_TIME_SECONDS * 1000);
         }
+        display_update_enable(true);
     }
 
     decoder.decodeFrame();
@@ -347,6 +449,3 @@ void loop() {
       decrease refreshRate in setup() to 90 or lower to get good an accurate GIF frame rate
     - Set the chip select pin for your board.  On Teensy 3.5/3.6, the onboard microSD CS pin is "BUILTIN_SDCARD"
 */
-
-
-

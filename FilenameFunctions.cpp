@@ -5,6 +5,7 @@
 
     Written by: Craig A. Lindley
 */
+//#define USEFILEIO //if defined will enable the original use of file.read functions 
 
 #include "FilenameFunctions.h"    //defines USE_SPIFFS as reqd
 
@@ -30,36 +31,75 @@ File file;
 
 int numberOfFiles;
 
+std::vector<uint8_t> filedata;
+long pos;//Position in uint8 array
+
+
+void display_update_enable(boolean is_enable);
+SPIClass spiSD(VSPI);
+
 bool fileSeekCallback(unsigned long position) {
-#ifdef USE_SPIFFS
-    return file.seek(position, SeekSet);
+#ifdef USEFILEIO
+ return file.seek(position);
 #else
-    return file.seek(position);
+  pos=position;
+  return true;//Always returns true if successful
 #endif
 }
 
 unsigned long filePositionCallback(void) {
-    return file.position();
+#ifdef USEFILEIO
+  return file.position();
+#else
+  return pos;
+#endif
 }
 
 int fileReadCallback(void) {
-    return file.read();
+#ifdef USEFILEIO
+  return file.read();
+#else
+  pos++;
+  return filedata[pos-1];
+#endif
 }
 
 int fileReadBlockCallback(void * buffer, int numberOfBytes) {
-    return file.read((uint8_t*)buffer, numberOfBytes); //.kbv
+#ifdef USEFILEIO
+  return file.read((uint8_t*)buffer, numberOfBytes); //.kbv
+#else
+  for(int i=0; i<numberOfBytes;i++)
+  {
+    if(pos<filedata.size())
+    {
+      ((uint8_t*)buffer)[i]=fileReadCallback();
+    }
+    else
+    {
+      return 0;
+    }
+  }
+  return numberOfBytes;
+#endif
 }
 
 int initSdCard(int chipSelectPin) {
     // initialize the SD card at full speed
-    pinMode(chipSelectPin, OUTPUT);
+    //display_update_enable(false);//Always make sure to disable the update loop before you check SD Card data
+    //pinMode(chipSelectPin, OUTPUT);
 #ifdef USE_SPIFFS
     if (!SPIFFS.begin())
         return -1;
 #else
+
+    spiSD.begin(18,19,23,chipSelectPin);//SCK,MISO,MOSI,CS
     if (!SD.begin(chipSelectPin))
-        return -1;
+    {
+      //display_update_enable(true);//Always make sure to turn the screen back on
+      return -1;
+    }
 #endif
+    //display_update_enable(true);
     return 0;
 }
 
@@ -201,7 +241,16 @@ int openGifFilenameByIndex(const char *directoryName, int index) {
         Serial.println("Error opening GIF file");
         return -1;
     }
-
+#ifdef USEFILEIO
+  
+#else
+    filedata.clear();
+    while(file.available())
+    {
+      filedata.push_back(file.read());
+    }
+    file.close();
+#endif
     return 0;
 }
 
@@ -213,3 +262,28 @@ void chooseRandomGIFFilename(const char *directoryName, char *pnBuffer) {
     getGIFFilenameByIndex(directoryName, index, pnBuffer);
 }
 
+int openGifByFilename(const char *directoryName, const char *index)
+{
+  if(strlen(index)!=2)
+    return -1;//-1 Means the string passed to was not two digits
+  char FileToOpen[20];//Arbitrary size, can be changed to anything as long as it has space for all possible characters
+  strcpy(FileToOpen,directoryName);
+  strcat(FileToOpen,"/");
+  strcat(FileToOpen,index);
+  strcat(FileToOpen,".gif");
+  if(file)
+    file.close();
+  file=SD.open(FileToOpen);
+  if(!file) return -2;//Means the file opened was not valid
+#ifdef USEFILEIO
+#else
+  filedata.clear();
+  while(file.available())
+  {
+    filedata.push_back(file.read());
+  }
+  file.close();
+#endif
+  return 1;//If nothing failed a 1 is returned
+  
+}

@@ -169,4 +169,3 @@ private:
 #include "LzwDecoder_Impl.h"
 
 #endif
-
