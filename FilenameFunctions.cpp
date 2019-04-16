@@ -224,8 +224,9 @@ int openGifFilenameByIndex(const char *directoryName, int index) {
     char pathname[40];
 
     getGIFFilenameByIndex(directoryName, index, pathname);
-
-    Serial.print("Pathname: ");
+    Serial.print("Max Vector Size:");
+    Serial.print(filedata.max_size());
+    Serial.print("     Pathname: ");
     Serial.println(pathname);
 
     if (file)
@@ -245,6 +246,7 @@ int openGifFilenameByIndex(const char *directoryName, int index) {
   
 #else
     filedata.clear();
+    filedata.reserve(file.size());
     while(file.available())
     {
       filedata.push_back(file.read());

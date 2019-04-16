@@ -97,7 +97,7 @@ PxMATRIX MATRIX(matrix_width,matrix_height,P_LAT, P_OE,P_A,P_B,P_C,P_D);//Initia
 
   /***********************\
   |+-----------------+    |
-  || VCC GND SCL SDA |    |
+  || VCC GND SCL SDA |    |ezgif-2-a6a14e0c6e29.gif
   |+-----------------+    |
   |Panel - OLED Pins      |
   |  VCC - 3.3V GND - GND |
@@ -156,8 +156,6 @@ uint8_t display_draw_time=10;
 int num_files;
 
 #include "gifs_128.h"
-#include "wrong_gif.h"
-#include "llama_gif.h"
 
 // ISR for matrix display refresh
 void IRAM_ATTR display_updater(){
@@ -192,14 +190,14 @@ typedef struct {
 gif_detail_t gifs[] = {
 
     M0(teakettle_128x128x10_gif),  // 21155
-    M0(globe_rotating_gif),        // 90533
+    //M0(globe_rotating_gif),        // 90533
     M0(bottom_128x128x17_gif),     // 51775
-    M0(irish_cows_green_beer_gif), // 29798
+    //M0(irish_cows_green_beer_gif), // 29798
 #if !defined(TEENSYDUINO)
     M0(horse_128x96x8_gif),        //  7868
 #endif
 #if defined(ESP32)
-    M0(llama_driver_gif),    //758945
+    //M0(llama_driver_gif),    //758945
 #endif
     //    M0(marilyn_240x240_gif),       // 40843
     //    M0(cliff_100x100_gif),   //406564
