@@ -8,8 +8,9 @@
 
 typedef void (*callback)(void);
 typedef void (*pixel_callback)(int16_t x, int16_t y, uint8_t red, uint8_t green, uint8_t blue);
-typedef void (*line_callback)(int16_t x, int16_t y, uint8_t *buf, int16_t wid, uint16_t *palette565, int16_t skip);
+typedef void (*line_callback)(int16_t x, int16_t y, uint8_t *buf, int16_t wid, uint16_t *palette565, int16_t skip, int transparentColorIndex);
 typedef void* (*get_buffer_callback)(void);
+typedef void (*update_OLED)(void);
 
 typedef bool (*file_seek_callback)(unsigned long position);
 typedef unsigned long (*file_position_callback)(void);
@@ -48,6 +49,7 @@ public:
     void setFileReadCallback(file_read_callback f);
     void setFileReadBlockCallback(file_read_block_callback f);
 
+    void setUpdateOLED(update_OLED f);
 private:
     void parseTableBasedImage(void);
     void decompressAndDisplayFrame(unsigned long filePositionAfter);
@@ -132,6 +134,8 @@ private:
     file_position_callback filePositionCallback;
     file_read_callback fileReadCallback;
     file_read_block_callback fileReadBlockCallback;
+    
+    update_OLED updateOLED;
 
     // LZW variables
     int bbits;

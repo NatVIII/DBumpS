@@ -135,6 +135,11 @@ void GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::setFileReadBlockCallback
     fileReadBlockCallback = f;
 }
 
+template <int maxGifWidth, int maxGifHeight, int lzwMaxBits>
+void GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::setUpdateOLED(update_OLED f) {
+    updateOLED = f;
+}
+
 // Backup the read stream by n bytes
 template <int maxGifWidth, int maxGifHeight, int lzwMaxBits>
 void GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::backUpStream(int n) {
@@ -819,7 +824,6 @@ void GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::decompressAndDisplayFram
             if (pixel == transparentColorIndex) {
                 continue;
             }
-
             // Pixel not transparent so get color from palette and draw the pixel
             if (drawPixelCallback)
                 (*drawPixelCallback)(x, y, palette[pixel].red, palette[pixel].green, palette[pixel].blue);
@@ -866,19 +870,28 @@ void GifDecoder<maxGifWidth, maxGifHeight, lzwMaxBits>::decompressAndDisplayFram
             int wid = (disposalMethod == DISPOSAL_BACKGROUND) ? lsdWidth : tbiWidth;
             int skip = (disposalMethod == DISPOSAL_BACKGROUND) ? -1 : transparentColorIndex;;
             if (drawLineCallback) {
-                (*drawLineCallback)(xofs, line + tbiImageY, imageBuf + xofs, wid, palette565, skip);
+                (*drawLineCallback)(xofs, line + tbiImageY, imageBuf + xofs, wid, palette565, skip, transparentColorIndex);
             } else if (drawPixelCallback) {
                 for (int x = 0; x < wid; x++) {
                     uint8_t pixel = imageBuf[x + xofs];
                     if ((pixel != skip))
-                        (*drawPixelCallback)(x + xofs, line + tbiImageY,
-                                             palette[pixel].red, palette[pixel].green, palette[pixel].blue);
+                    {
+                      if(skip==-1 && pixel == transparentColorIndex)
+                      {
+                        (*drawPixelCallback)(x + xofs, line + tbiImageY, 0, 0, 0);
+                      }
+                      else
+                      {
+                        (*drawPixelCallback)(x + xofs, line + tbiImageY, palette[pixel].red, palette[pixel].green, palette[pixel].blue);
+                      }
+                    }
                 }
             }
         }
     }
     // LZW doesn't parse through all the data, manually set position
     fileSeekCallback(filePositionAfter);
+    //(*updateOLED)();
 #if GIFDEBUG > 2
     Serial.println(millis() - t);
 #endif

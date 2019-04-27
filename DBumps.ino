@@ -157,6 +157,8 @@ int num_files;
 
 #include "gifs_128.h"
 
+uint16_t canvas[matrix_width][matrix_height];//Cache of currently displayed pixels
+
 // ISR for matrix display refresh
 void IRAM_ATTR display_updater(){
   // Increment the counter and set the time of ISR
@@ -242,14 +244,63 @@ bool openGifFilenameByIndex_P(const char *dirname, int index)
     return index < num_files;
 }
 void updateScreenCallback(void) {
-    ;
+    
+}
+
+void drawNatPix(int16_t x, int16_t y, uint16_t pixel)//Special draw function that writes to the screen, an array storing all currently displayed pixels, and the OLED
+{
+  canvas[x][y]=pixel;
+  MATRIX.drawPixel(x,y,pixel);
+  /*
+  if(pixel==0x0000)
+  {
+    OLED.drawPixel(x*2+1,y*2+1, 0);
+    OLED.drawPixel(x*2+1,y*2, 0);
+    OLED.drawPixel(x*2,y*2+1, 0);
+    OLED.drawPixel(x*2,y*2, 0);
+  }
+  else
+  {
+    OLED.drawPixel(x*2+1,y*2+1, 2);
+    OLED.drawPixel(x*2+1,y*2, 2);
+    OLED.drawPixel(x*2,y*2+1, 2);
+    OLED.drawPixel(x*2,y*2, 2);
+  }
+  */
+}
+
+void updateOLED()
+{
+  OLED.display();
+}
+
+void clearNat(uint16_t pixel)//Calls drawNatPix to clear the entire screen
+{
+    for(int x = 0;x < matrix_width; x++)
+  {
+    for(int y = 0;y < matrix_height; y++)
+    {
+      drawNatPix(x,y,pixel);
+    }
+  }
+}
+
+void clearArrNat(uint16_t pixel)//Modifies array directly
+{
+  for(int x = 0;x < matrix_width; x++)
+  {
+    for(int y = 0;y < matrix_height; y++)
+    {
+      canvas[x][y]=pixel;
+    }
+  }
 }
 
 void drawPixelCallback(int16_t x, int16_t y, uint8_t red, uint8_t green, uint8_t blue) {
     MATRIX.drawPixel(x, y, MATRIX.color565(red, green, blue));
 }
 
-void drawLineCallback(int16_t x, int16_t y, uint8_t *buf, int16_t w, uint16_t *palette, int16_t skip) {
+void drawLineCallback(int16_t x, int16_t y, uint8_t *buf, int16_t w, uint16_t *palette, int16_t skip, int transparentColorIndex) {
     uint8_t pixel;
     bool first;
     if (y >= matrix_height || x >= matrix_width ) return;
@@ -261,16 +312,66 @@ void drawLineCallback(int16_t x, int16_t y, uint8_t *buf, int16_t w, uint16_t *p
         int n = 0;
         while (i < w) {
             pixel = buf[i++];
-            if (pixel == skip) break;
-            buf565[n++] = palette[pixel];
+            if (pixel == skip)
+            {
+              buf565[n++]=canvas[x+i-1][y];
+            }
+            else
+            {
+            if(skip == -1 && pixel == transparentColorIndex) buf565[n++] = 0x0000;
+            else buf565[n++] = palette[pixel];
+            }
         }
         if (n) {
             /*MATRIX.setAddrWindow(x + i - n, y, endx, y);
             first = true;
             for (int j = 0; j < n; j++) (buf565[j]);*/ // Original Code to replicate
-            for(int j=0;j<n;j++) MATRIX.drawPixel(x+j,y,buf565[j]);
+            for(int j=0;j<n;j++) drawNatPix(x+j,y,buf565[j]);
         }
     }
+}
+
+void displayUpdateTask( void * pvParameters )
+{
+while(69)
+  {
+    
+uint16_t canvass[matrix_width][matrix_height];
+
+    for(int x = 0;x < matrix_width; x++)
+   {
+    for(int y = 0;y < matrix_height; y++)
+      {
+        canvass[x][y]=canvas[x][y];
+      }
+    }
+
+    
+for(int x = 0;x < matrix_width; x++)
+   {
+    for(int y = 0;y < matrix_height; y++)
+      {
+      uint16_t pixel=canvass[x][y];
+
+        if(pixel==0x0000)
+         {
+            OLED.drawPixel(x*2+1,y*2+1, 0);
+            OLED.drawPixel(x*2+1,y*2, 0);
+            OLED.drawPixel(x*2,y*2+1, 0);
+            OLED.drawPixel(x*2,y*2, 0);
+          }
+         else
+          {
+           OLED.drawPixel(x*2+1,y*2+1, 1);
+           OLED.drawPixel(x*2+1,y*2, 1);
+           OLED.drawPixel(x*2,y*2+1, 1);
+           OLED.drawPixel(x*2,y*2, 1);
+         }
+      
+      }
+    }
+    OLED.display();
+  }
 }
 
 // Setup method runs once, when the sketch starts
@@ -279,10 +380,14 @@ void setup() {
     OLED.begin(SH1106_SWITCHCAPVCC, 0x3C);//Initializes the OLED Display
     OLED.clearDisplay();//Wipes the OLED Display
     MATRIX.begin(16);//Initializes the MATRIX Display
-    MATRIX.setBrightness(255);
+    clearArrNat(0x0000);//Sets the initial value of the canvas array to fully empty
+    MATRIX.setBrightness(27);
     MATRIX.setFastUpdate(true);
     display_update_enable(true);
     display_update_enable(false);
+
+    Serial.print("Core running on:");
+    Serial.println(xPortGetCoreID());
     
     decoder.setScreenClearCallback(screenClearCallback);
     decoder.setUpdateScreenCallback(updateScreenCallback);
@@ -294,6 +399,18 @@ void setup() {
     decoder.setFileReadCallback(fileReadCallback);
     decoder.setFileReadBlockCallback(fileReadBlockCallback);
 
+    decoder.setUpdateOLED(updateOLED);
+
+     
+    xTaskCreatePinnedToCore(
+                    displayUpdateTask,   /* Function to implement the task */
+                    "coreTask", /* Name of the task */
+                    10000,      /* Stack size in words */
+                    NULL,       /* Task input parameter */
+                    0,          /* Priority of the task */
+                    NULL,       /* Task handle. */
+                    0);  /* Core where the task should run */
+ 
     Serial.println("AnimatedGIFs_SD");
     #ifdef LOOPFORSD
     while (initSdCard(SD_CS) < 0) {
@@ -332,10 +449,8 @@ void setup() {
         Serial.println("Empty gifs directory");
         while (1);
     }
-}
 
-
-void loop() {
+/*
     static unsigned long futureTime, cycle_start;
 
     //    int index = random(num_files);
@@ -357,7 +472,7 @@ void loop() {
         if (++index >= num_files) {
             index = 0;
         }
-
+        index=1;
         int good;
         if (g_gif) good = (openGifFilenameByIndex_P(GIF_DIRECTORY, index) >= 0);
         else
@@ -367,9 +482,61 @@ void loop() {
           //display_update_enable(true);
         }
         if (good >= 0) {
-            MATRIX.fillScreen(g_gif ? MAGENTA : DISKCOLOUR);
-            MATRIX.fillRect(GIFWIDTH, 0, 1, matrix_height, WHITE);
-            MATRIX.fillRect(278, 0, 1, matrix_height, WHITE);
+            MATRIX.fillScreen(g_gif ? BLACK : BLACK);
+            MATRIX.fillRect(GIFWIDTH, 0, 1, matrix_height, BLACK);
+            MATRIX.fillRect(278, 0, 1, matrix_height, BLACK);
+
+            decoder.startDecoding();
+
+            // Calculate time in the future to terminate animation
+            futureTime = millis() + (DISPLAY_TIME_SECONDS * 1000);
+        }
+        display_update_enable(true);
+    }
+
+    while(1) 
+    decoder.decodeFrame();
+    */
+}
+
+
+void loop() {
+  
+    static unsigned long futureTime, cycle_start;
+
+    //    int index = random(num_files);
+    static int index = -1;
+
+    if (futureTime < millis() || decoder.getCycleNo() > 1) {
+        display_update_enable(false);
+        char buf[80];
+        int32_t now = millis();
+        int32_t frames = decoder.getFrameCount();
+        int32_t cycle_design = decoder.getCycleTime();
+        int32_t cycle_time = now - cycle_start;
+        int32_t percent = (100 * cycle_design) / cycle_time;
+        sprintf(buf, "[%ld frames = %ldms] actual: %ldms speed: %d%%",
+                frames, cycle_design, cycle_time, percent);
+        Serial.println(buf);
+        cycle_start = now;
+        //        num_files = 2;
+        if (++index >= num_files) {
+            index = 0;
+        }
+        clearArrNat(0x0000);
+        OLED.clearDisplay();
+        int good;
+        if (g_gif) good = (openGifFilenameByIndex_P(GIF_DIRECTORY, index) >= 0);
+        else
+        {
+          //display_update_enable(false);
+          good = (openGifFilenameByIndex(GIF_DIRECTORY, index) >= 0);
+          //display_update_enable(true);
+        }
+        if (good >= 0) {
+            MATRIX.fillScreen(g_gif ? BLACK : BLACK);
+            MATRIX.fillRect(GIFWIDTH, 0, 1, matrix_height, BLACK);
+            MATRIX.fillRect(278, 0, 1, matrix_height, BLACK);
 
             decoder.startDecoding();
 
@@ -380,6 +547,7 @@ void loop() {
     }
 
     decoder.decodeFrame();
+    
 }
 
 /*
