@@ -13,6 +13,7 @@
 
   Dedicated to the brave Mujahadeen Fighters of Afghanistan
   **************************************/
+  
 #define matrix_width 64
 #define matrix_height 32
 
@@ -66,7 +67,7 @@ GifDecoder<GIFWIDTH, 320, 12> decoder;
 #endif
 #define LOOPFORSD
 
-  /********************************************\ 
+  /********************************************\ FilenameFunctions
   |                                            |
   | //(PO is Pin Out of the Matrix)            |
   | //(IO is GPIO of the ESP32)                |
@@ -138,8 +139,13 @@ Adafruit_SH1106 OLED(OLED_SDA, OLED_SCL);//Initializes the OLED Display Code and
 boolean PrevR_Blue = false;
 boolean PrevR_White = false;
 volatile int count = 0;
-volatile int finalcount = 0;
+volatile int minicount = 0;
+boolean DemoMode = true;
+unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
+unsigned long debounceDelay = 30;    // the debounce time; increase if the output flickers
+unsigned long totalDebounce = 0;
 
+  
 //MUST BE 10-50 FOR SOME REASON FOR THE MATRIX
 uint8_t display_draw_time=10;
 
@@ -335,14 +341,15 @@ void displayUpdateTask( void * pvParameters )
 {
 while(69)
   {
+
     
-uint16_t canvass[matrix_width][matrix_height];
+int canvass[matrix_width][matrix_height];
 
     for(int x = 0;x < matrix_width; x++)
    {
     for(int y = 0;y < matrix_height; y++)
       {
-        canvass[x][y]=canvas[x][y];
+        canvass[x][y]= /*Red*/ (0.299 * (((canvas[x][y] & 63488) >> 11) * 8)) + /*Green*/ (0.587 * (((canvas[x][y] & 2016) >> 5) * 4)) + /*Blue*/ (0.114 * (((canvas[x][y] & 31)) * 8));
       }
     }
 
@@ -351,10 +358,18 @@ for(int x = 0;x < matrix_width; x++)
    {
     for(int y = 0;y < matrix_height; y++)
       {
-      uint16_t pixel=canvass[x][y];
-
-        if(pixel==0x0000)
+        if(canvass[x][y]<128)
          {
+          
+          if(x+1<matrix_width) canvass[x+1][y]=canvass[x+1][y]+((canvass[x][y]/16)*7);       //  7/16
+          if(y+1<matrix_height)
+          {
+            if(x-1>=0) canvass[x-1][y+1]=canvass[x-1][y+1]+((canvass[x][y]/16)*3);            //  3/16
+            if(1) canvass[x][y+1]=canvass[x][y+1]+((canvass[x][y]/16)*5);                     //  5/16
+            if(x+1<matrix_width) canvass[x+1][y+1]=canvass[x+1][y+1]+((canvass[x][y]/16)*1);  //  1/16
+          }
+          canvass[x][y]=0;
+         
             OLED.drawPixel(x*2+1,y*2+1, 0);
             OLED.drawPixel(x*2+1,y*2, 0);
             OLED.drawPixel(x*2,y*2+1, 0);
@@ -362,6 +377,16 @@ for(int x = 0;x < matrix_width; x++)
           }
          else
           {
+           
+          if(x+1<matrix_width) canvass[x+1][y]=canvass[x+1][y]+(((canvass[x][y]-256)/16)*7);       //  7/16
+          if(y+1<matrix_height)
+          {
+            if(x-1>=0) canvass[x-1][y+1]=canvass[x-1][y+1]+(((canvass[x][y]-256)/16)*3);            //  3/16
+            if(1) canvass[x][y+1]=canvass[x][y+1]+(((canvass[x][y]-256)/16)*5);                     //  5/16
+            if(x+1<matrix_width) canvass[x+1][y+1]=canvass[x+1][y+1]+(((canvass[x][y]-256)/16)*1);  //  1/16
+          }
+          canvass[x][y]=255;
+          
            OLED.drawPixel(x*2+1,y*2+1, 1);
            OLED.drawPixel(x*2+1,y*2, 1);
            OLED.drawPixel(x*2,y*2+1, 1);
@@ -370,6 +395,8 @@ for(int x = 0;x < matrix_width; x++)
       
       }
     }
+
+    
     OLED.display();
   }
 }
@@ -380,8 +407,9 @@ void setup() {
     OLED.begin(SH1106_SWITCHCAPVCC, 0x3C);//Initializes the OLED Display
     OLED.clearDisplay();//Wipes the OLED Display
     MATRIX.begin(16);//Initializes the MATRIX Display
+    Serial.println("jef");
     clearArrNat(0x0000);//Sets the initial value of the canvas array to fully empty
-    MATRIX.setBrightness(27);
+    MATRIX.setBrightness(255);
     MATRIX.setFastUpdate(true);
     display_update_enable(true);
     display_update_enable(false);
@@ -497,11 +525,69 @@ void setup() {
     while(1) 
     decoder.decodeFrame();
     */
+
+    //////////////////////////////////////////////////////////////////////////
+  ///////////// Setting up the Rotary Dial 
+  //////////////////////////////////////////////////////////////////////////
+  pinMode(R_Blue, INPUT_PULLUP); //FALSE = Contacted
+  pinMode(R_White, INPUT_PULLUP); // FALSE = Contacted
+  //////////////////////////////////////////////////////////////////////////
+
+/*
+  
+display_update_enable(true);
+
+  while(1)
+  {
+    if(!digitalRead(R_Blue))//When contacts touch
+  {
+    drawNatPix(0,1,0xFFFF);
+    drawNatPix(0,0,0x0000);
+  }
+  else//When contacts are not touch
+  {
+    drawNatPix(0,0,0xFFFF);
+    drawNatPix(0,1,0x0000);
+  }
+  if(!digitalRead(R_White))//When contacts touch
+  {
+    drawNatPix(1,1,0xFFFF);
+    drawNatPix(1,0,0x0000);
+  }
+  else//When contacts are not touch
+  {
+    drawNatPix(1,0,0xFFFF);
+    drawNatPix(1,1,0x0000);
+  }
+  if((digitalRead(R_Blue)!=PrevR_Blue)&&PrevR_Blue)
+  {
+    count++;
+    Serial.print("Count:");
+    Serial.println(count);
+  }
+  if((digitalRead(R_White)!=PrevR_White)&&!PrevR_White)
+  {
+    if(count!=0)
+    {
+      finalcount=count;
+      Serial.print("Final Count:");
+      Serial.println(finalcount);
+      count=0;
+      
+    }
+  }
+  PrevR_Blue = digitalRead(R_Blue);
+  PrevR_White = digitalRead(R_White);
+  }
+
+  */
 }
 
 
 void loop() {
-  
+
+    if(DemoMode==true)
+    {
     static unsigned long futureTime, cycle_start;
 
     //    int index = random(num_files);
@@ -545,9 +631,77 @@ void loop() {
         }
         display_update_enable(true);
     }
-
+    while(!digitalRead(R_White))
+      {
+         PrevR_Blue = !digitalRead(R_Blue);
+         PrevR_White = true;
+      }
+      if((!digitalRead(R_White)!=PrevR_White)&&PrevR_White)
+      {
+        DemoMode=false;
+        PrevR_Blue = !digitalRead(R_Blue);
+        PrevR_White = !digitalRead(R_White);
+      }
     decoder.decodeFrame();
+    }
     
+    else
+    {
+      while(!digitalRead(R_White))//While things are being entered into the dial
+      {
+        if(PrevR_White==false)//Before things are entered into the dial
+        {
+          totalDebounce=millis();
+        }
+      if((!digitalRead(R_Blue)!=PrevR_Blue)&&!PrevR_Blue&&((millis()-lastDebounceTime)>debounceDelay))
+         {
+             count++;
+             minicount++;
+             lastDebounceTime=millis();
+         }
+         PrevR_Blue = !digitalRead(R_Blue);
+         PrevR_White = true;
+      }
+      if((!digitalRead(R_White)!=PrevR_White)&&PrevR_White&&(minicount!=0))//After things are entered into the dial
+      {
+             Serial.print("Count:");
+             Serial.print(count);
+             Serial.print("     miniCount:");
+             Serial.print(minicount);
+             totalDebounce=millis()-totalDebounce;
+             Serial.print("     TotalTime:");
+             Serial.println(totalDebounce);
+        if(minicount>=10)
+        {
+          count=count-minicount;
+        }
+        if(count=0&&minicount!=0)   //If the first digit entered was 0, used for menu options
+        {
+          Serial.println("Options Mode");
+          count=0;
+        }
+        else                        //If the first digit entered was 1-9, used for selecting gifs
+        { 
+          if((count/10)>=1)//Change 10 to 100 for opening the gif after 3 number inputs, 1000 for 4 number inputs, etc
+          {
+            Serial.print("Final Count:");
+            Serial.println(count);
+            if(count=99);
+            {
+              DemoMode=true;
+            }
+            count=0;
+          }
+          else
+          {
+            count=count*10;
+            minicount=0;
+          }
+        }
+        PrevR_White = false;
+      }
+      //decoder.decodeFrame();
+    }
 }
 
 /*
@@ -579,21 +733,9 @@ void loop() {
 */
 
 /*
-    This example displays 32x32 GIF animations loaded from a SD Card connected to the Teensy 3.1
-    The GIFs can be up to 32 pixels in width and height.
-    This code has been tested with 32x32 pixel and 16x16 pixel GIFs, but is optimized for 32x32 pixel GIFs.
-
-    Wiring is on the default Teensy 3.1 SPI pins, and chip select can be on any GPIO,
-    set by defining SD_CS in the code below
-    Function     | Pin
-    DOUT         |  11
-    DIN          |  12
-    CLK          |  13
-    CS (default) |  15
-
     This code first looks for .gif files in the /gifs/ directory
     (customize below with the GIF_DIRECTORY definition) then plays random GIFs in the directory,
-    looping each GIF for DISPLAY_TIME_SECONDS
+    looping each GIF for DISPLAY_TIME_SECONDS or allowing you to select gifs 10.gif ... 99.gif
 
     This example is meant to give you an idea of how to add GIF playback to your own sketch.
     For a project that adds GIF playback with other features, take a look at
@@ -603,7 +745,7 @@ void loop() {
 
     If you find any GIFs that won't play properly, please attach them to a new
     Issue post in the GitHub repo here:
-    https://github.com/pixelmatix/AnimatedGIFs/issues
+    https://github.com/NatBF/DBumps
 */
 
 /*
