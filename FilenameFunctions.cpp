@@ -237,6 +237,8 @@ int openGifFilenameByIndex(const char *directoryName, int index) {
     file = SPIFFS.open(pathname, "r");
 #else
     file = SD.open(pathname);
+    Serial.print("pathname:");
+    Serial.println(pathname);
 #endif
     if (!file) {
         Serial.println("Error opening GIF file");
@@ -266,26 +268,69 @@ void chooseRandomGIFFilename(const char *directoryName, char *pnBuffer) {
 
 int openGifByFilename(const char *directoryName, const char *index)
 {
-  if(strlen(index)!=2)
-    return -1;//-1 Means the string passed to was not two digits
-  char FileToOpen[20];//Arbitrary size, can be changed to anything as long as it has space for all possible characters
+  char FileToOpen[80];//Arbitrary size, can be changed to anything as long as it has space for all possible characters
   strcpy(FileToOpen,directoryName);
   strcat(FileToOpen,"/");
   strcat(FileToOpen,index);
   strcat(FileToOpen,".gif");
+Serial.print("FileToOpen:");
+Serial.println(FileToOpen);
   if(file)
     file.close();
-  file=SD.open(FileToOpen);
+Serial.println("fileclosed");
+  if(!isAnimationFile(FileToOpen))
+    return -1;//-1 Means the string passed to was not a gif
+Serial.println("IsAnimation");
+
+
+
+    Serial.printf("Listing directory: %s\n", directoryName);
+
+    File root = SD.open(directoryName);
+    
+    Serial.println("SD.open(directoryName)");
+    
+    if(!root){
+        Serial.println("Failed to open directory");
+    }
+    if(!root.isDirectory()){
+        Serial.println("Not a directory");
+    }
+    
+    Serial.println("No Failures");
+    
+    file = root.openNextFile();
+    
+    Serial.println("file= = root.openNextFile()");
+    
+    while(file){
+        if(file.isDirectory()){
+            Serial.println("  DIR : ");
+            Serial.println(file.name());
+        } else {
+            Serial.println("  FILE: ");
+            Serial.println(file.name());
+            Serial.println("  SIZE: ");
+            Serial.println(file.size());
+        }
+        file = root.openNextFile();
+    }
+
+    Serial.println("Directory while finished");
+
+
+  file = SD.open(FileToOpen);
+Serial.println("file opened");
   if(!file) return -2;//Means the file opened was not valid
-#ifdef USEFILEIO
-#else
   filedata.clear();
+Serial.println("fileclear");
+  filedata.reserve(file.size());
   while(file.available())
   {
     filedata.push_back(file.read());
   }
   file.close();
-#endif
+Serial.println("fileclosedagain");
   return 1;//If nothing failed a 1 is returned
   
 }

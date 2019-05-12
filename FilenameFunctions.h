@@ -7,6 +7,7 @@ int enumerateGIFFiles(const char *directoryName, bool displayFilenames);
 void getGIFFilenameByIndex(const char *directoryName, int index, char *pnBuffer);
 int openGifFilenameByIndex(const char *directoryName, int index);
 int initSdCard(int chipSelectPin);
+int openGifByFilename(const char *directoryName, const char *index);
 
 bool fileSeekCallback(unsigned long position);
 unsigned long filePositionCallback(void);
