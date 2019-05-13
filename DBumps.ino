@@ -144,8 +144,11 @@ boolean PrevR_Blue = false;
 boolean PrevR_White = false;
 volatile int count = 0;
 volatile int finalcount = 0;
-boolean DemoMode = false;
+int ControlMode = -1;//Used to turn on DemoMode, Set the Gif to display from Interrupt, etc|| -1 means to not use decode at all, 0 means to just loop decode, 1 means to passively run DemoMode, 2 means to open a new gif file
+char gifname[80];
 boolean OptionMode = false;
+
+boolean OpenFile = false;
 //Blue Debouncer
 unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 80;    // the debounce time; increase if the output flickers
@@ -809,9 +812,8 @@ canvassClear();
   attachInterrupt(R_Blue, blueInterrupt, FALLING);
   attachInterrupt(R_White, whiteInterrupt, CHANGE);
 
-  canvassString(0,0,"Big",3);
-  canvassString(0,8,"Dyke",4);
-  canvassString(0,16,"Energy",6,true);
+  canvassString(0,0,"DBumpS",6);
+  canvassString(0,24,"B:255",5,true);
 }
 
 
@@ -821,7 +823,7 @@ canvassClear();
 
 void loop() {
 
-  if (DemoMode == true)
+  if (ControlMode == 1)
   {
     static unsigned long futureTime, cycle_start;
 
@@ -870,10 +872,41 @@ void loop() {
   }
   else
   {
-    /*
-      //decoder.decodeFrame();
-    */
+  if(ControlMode==2)
+  {
+      //////////////////////////////////////////////////////////////////
+          static unsigned long futureTime, cycle_start;
+          
+            display_update_enable(false);
+            
+            char buf[80];
+            int32_t now = millis();
+            int32_t frames = decoder.getFrameCount();
+            int32_t cycle_design = decoder.getCycleTime();
+            int32_t cycle_time = now - cycle_start;
+            int32_t percent = (100 * cycle_design) / cycle_time;
+            sprintf(buf, "[%ld frames = %ldms] actual: %ldms speed: %d%%",
+            frames, cycle_design, cycle_time, percent);
+            Serial.println(buf);
+            cycle_start = now;
+              
+            clearArrNat(0x0000);
+            OLED.clearDisplay();
+            int good;
+            good = openGifByFilename(GIF_DIRECTORY,gifname);
+            if (good >= 0) {
+              MATRIX.fillScreen(g_gif ? BLACK : BLACK);
+              MATRIX.fillRect(GIFWIDTH, 0, 1, matrix_height, BLACK);
+              MATRIX.fillRect(278, 0, 1, matrix_height, BLACK);
+              decoder.startDecoding();
+            }
+            else canvassString(12,16,"ERROR",5,true);
+            display_update_enable(true);
+          //////////////////////////////////////////////////////////////////
+          ControlMode=0;
   }
+  }
+  if(ControlMode!=-1) decoder.decodeFrame();
   if(clearSoon)
   {
     if(millis()>(clearMillis+clearDelay))
@@ -917,7 +950,7 @@ void whiteInterrupt()
     }
     else
     {
-      if (digitalRead(R_White) == true) //If someone just ended inputting into it, or RISING
+      if (digitalRead(R_White) == true && count!=0) //If someone just ended inputting into it, or RISING
       {
         if(count>=10) count=0;
         ////////////////////////////////////////////////////////////
@@ -939,43 +972,19 @@ void whiteInterrupt()
           {
             
           }
-          if(count==2)//Turns on DemoMode
+          if(count==2)//Turns on ControlMode
           {
-            DemoMode=!DemoMode;
+            if(ControlMode==1) ControlMode=0;
+            else ControlMode=1;
           }
           if(count==3)
           {
-            //////////////////////////////////////////////////////////////////
-            static unsigned long futureTime, cycle_start;
             
-              display_update_enable(false);
-              
-              char buf[80];
-              int32_t now = millis();
-              int32_t frames = decoder.getFrameCount();
-              int32_t cycle_design = decoder.getCycleTime();
-              int32_t cycle_time = now - cycle_start;
-              int32_t percent = (100 * cycle_design) / cycle_time;
-              sprintf(buf, "[%ld frames = %ldms] actual: %ldms speed: %d%%",
-              frames, cycle_design, cycle_time, percent);
-              Serial.println(buf);
-              
-              clearArrNat(0x0000);
-              OLED.clearDisplay();
-              int good;
-              good = (openGifByFilename(GIF_DIRECTORY,"ezgif-2-2996c992b65d") >= 0);
-              if (good >= 0) {
-                MATRIX.fillScreen(g_gif ? BLACK : BLACK);
-                MATRIX.fillRect(GIFWIDTH, 0, 1, matrix_height, BLACK);
-                MATRIX.fillRect(278, 0, 1, matrix_height, BLACK);
-                decoder.startDecoding();
-              }
-              display_update_enable(true);
-            //////////////////////////////////////////////////////////////////
           }
           if(count==4)
           {
-            
+            ControlMode=2;
+            strcpy(gifname,"IWW_Gear");
           }
           if(count==5)
           {
@@ -1025,6 +1034,8 @@ void whiteInterrupt()
               char cister[2];
               itoa(finalcount,cister,10);
               canvassString(0,0,cister,2,true);
+              ControlMode=2;
+              strcpy(gifname,cister);
               finalcount=0;
             }
             else
